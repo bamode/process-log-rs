@@ -5,26 +5,29 @@
 /// Wisconsin IceCube Particle Astrophysics Center
 /// 
 /// Created 25 February 2022
-/// Current version: 0.1.0
+/// Current version: 0.2.0
 /// Status: operative
 
-use std::env::args;
 use std::fs::File;
 use std::io::{Read, Write};
 
-fn main() {
-    // handle args; should replace with some clap stuff as this doesn't even support -h
-    let mut args = args();
-    if args.len() < 2 { usage(); std::process::exit(1); }
-    if args.len() > 2 { usage(); println!("too many arguments provided"); std::process::exit(1); };
-    args.next().unwrap();
-    let filename = args.next().unwrap();
+use clap::Parser;
 
-    let mut file = File::open(filename).unwrap(); // hard-coded file name for now
+fn main() {
+    // handle args
+    let cli = Cli::parse();
+    let filename = cli.file;
+    let mut file = File::open(&filename).unwrap();
     let mut contents = String::new(); 
     file.read_to_string(&mut contents).unwrap();
     let (_, res) = contents.split_once("\n").unwrap(); // remove the header
     contents = String::from(res);
+    let file_header = filename
+        .split("/") // split on pathing (in *NIX systems)
+        .collect::<Vec<&str>>() // collect split into a `Vec` of string slices
+        .pop().unwrap() // get just the last element, e.g. the filename
+        .split(".") // split the filename from extensions
+        .collect::<Vec<&str>>()[0]; // just keep the important part of the name
 
     let (mut ramps, runs, vpeds) = parse_log(&contents); // ramps is mutable because it has duplicates in the logs
     ramps.dedup(); // remove duplicates
@@ -43,7 +46,7 @@ fn main() {
     }
     
     // make the output file and unwrap, handling of permissions errors should be supported
-    let mut new_file = File::create("2021-12-22-ramplog-cal-list.txt").unwrap();
+    let mut new_file = File::create(format!("{}-cal-list.txt", file_header)).unwrap();
     new_file.write_all(output.trim_end().as_bytes()).unwrap(); // have to write output as bytes
     
     output = String::new(); // reset our output buffer
@@ -55,7 +58,7 @@ fn main() {
         output.push_str(&format!("/data/wipac/CTA/target5and7data/runs_320000_through_329999/cal{}.r1 {}\n", run, vped));
         if !b {
             let ramp = iramp.next().unwrap();
-            let mut new_file = File::create(format!("2021-12-22-ramplog-ramp-{}-tf-dac-list.txt", ramp)).unwrap();
+            let mut new_file = File::create(format!("{}-ramp-{}-tf-dac-list.txt", file_header, ramp)).unwrap();
             new_file.write_all(output.trim_end().as_bytes()).unwrap();
             output = String::new();
         }
@@ -80,13 +83,16 @@ fn parse_log(contents: &String) -> (Vec<u64>, Vec<String>, Vec<isize>) {
     (ramps, runs, vpeds)
 }
 
-fn usage() {
-    let name = "process-log-rs";
-    let author = "Brent Mode";
-    let email = "<bmode@wisc.edu>";
-    let usage = "Usage: process-log FILE\nProcess log file for ramp current studies.";
-    let output = format!("{}\n{}\n{}\n{}\n", name, author, email, usage);
-    println!("{}", output);
+/// Command line interface definition so that help is provided and I don't
+/// have to try to parse both a flag and a required positional argument on my own.
+#[derive(Parser)]
+#[clap(name = "process-log-rs",
+       author = "Brent Mode <bmode@wisc.edu>",
+       version,
+       about = "Process log file for ramp current studies.",
+       long_about = None)]
+struct Cli {
+    file: String,
 }
 
 #[cfg(test)]
